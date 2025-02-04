@@ -1,58 +1,23 @@
 package main
 
 import (
-	"fmt"
+	"github/kritan10/Chirpy/utils"
 	"net/http"
-	"sync/atomic"
 )
 
-type apiConfig struct {
-	fileserverHits atomic.Int32
-}
-
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add("Cache-Control", "no-cache")
-		cfg.fileserverHits.Add(1)
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (cfg *apiConfig) resetHandler() http.HandlerFunc {
-	return func(res http.ResponseWriter, req *http.Request) {
-		cfg.fileserverHits.Swap(0)
-		res.Header().Add("Content-Type", "text/plain; charset=utf-8")
-		res.WriteHeader(200)
-	}
-}
-
-func (cfg *apiConfig) metricsHandler() http.HandlerFunc {
-	return func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Add("Content-Type", "text/plain; charset=utf-8")
-		res.WriteHeader(200)
-		data := fmt.Sprintf("Hits: %v", cfg.fileserverHits.Load())
-		res.Write([]byte(data))
-	}
-}
-
 func main() {
-	apiCfg := apiConfig{
-		fileserverHits: atomic.Int32{},
-	}
+	metrics := utils.MetricsConfig{}
 
 	mux := http.ServeMux{}
-	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 
-	mux.HandleFunc("GET /healthz", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Add("Content-Type", "text/plain; charset=utf-8")
-		res.WriteHeader(200)
-		body := "OK"
-		res.Write([]byte(body))
-	})
+	fileServer := http.StripPrefix("/app/", http.FileServer(http.Dir(".")))
+	mux.Handle("/app/", metrics.MiddlewareMetricsInc(fileServer))
 
-	mux.HandleFunc("GET /metrics", apiCfg.metricsHandler())
+	mux.HandleFunc("GET /api/healthz", utils.HealthzHandler())
+	mux.HandleFunc("POST /api/validate_chirp", utils.ValidateChirpHandler())
 
-	mux.HandleFunc("POST /reset", apiCfg.resetHandler())
+	mux.HandleFunc("GET /admin/metrics", metrics.MetricsHandler())
+	mux.HandleFunc("POST /admin/reset", metrics.ResetHandler())
 
 	server := http.Server{Addr: ":8080", Handler: &mux}
 	server.ListenAndServe()
