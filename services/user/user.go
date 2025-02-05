@@ -3,6 +3,8 @@ package user
 import (
 	"encoding/json"
 	"github/kritan10/Chirpy/config"
+	"github/kritan10/Chirpy/services/auth"
+	"github/kritan10/Chirpy/sql/gen"
 	"log"
 	"net/http"
 	"time"
@@ -13,12 +15,21 @@ import (
 func CreateUserHandler(apiConfig config.ApiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type parameters struct {
-			Email string `json:"email"`
+			Email    string `json:"email"`
+			Password string `json:"password"`
 		}
 		decoder := json.NewDecoder(r.Body)
 		body := parameters{}
 		decoder.Decode(&body)
-		user, err := apiConfig.DbQueries.CreateUser(r.Context(), body.Email)
+
+		hash, err := auth.HashPassword(body.Password)
+		if err != nil {
+			log.Printf("could not hash password %v", err)
+			w.WriteHeader(500)
+			return
+		}
+
+		user, err := apiConfig.DbQueries.CreateUser(r.Context(), gen.CreateUserParams{Email: body.Email, Password: hash})
 		if err != nil {
 			log.Printf("%v", err)
 			w.WriteHeader(500)

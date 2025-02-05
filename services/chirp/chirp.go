@@ -3,6 +3,7 @@ package chirp
 import (
 	"encoding/json"
 	"github/kritan10/Chirpy/config"
+	"github/kritan10/Chirpy/services/auth"
 	"github/kritan10/Chirpy/sql/gen"
 	"log"
 	"net/http"
@@ -15,9 +16,21 @@ import (
 func CreateChirpHandler(apiConfig config.ApiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
+		token, err := auth.GetBearerToken(r.Header)
+		if err != nil {
+			log.Printf("error GetBearerToken - %v", err)
+			w.WriteHeader(401)
+			return
+		}
+		userId, err := auth.ValidateJWT(token, apiConfig.JwtSecret)
+		if err != nil {
+			log.Printf("error ValidateJWT - %v", err)
+			w.WriteHeader(401)
+			return
+		}
+
 		type parameters struct {
-			Body   string    `json:"body"`
-			UserId uuid.UUID `json:"user_id"`
+			Body string `json:"body"`
 		}
 
 		decoder := json.NewDecoder(r.Body)
@@ -38,7 +51,7 @@ func CreateChirpHandler(apiConfig config.ApiConfig) http.HandlerFunc {
 			return
 		}
 
-		chirp, err := apiConfig.DbQueries.CreateChirp(r.Context(), gen.CreateChirpParams{Body: cleanChirpBody(body.Body), UserID: body.UserId})
+		chirp, err := apiConfig.DbQueries.CreateChirp(r.Context(), gen.CreateChirpParams{Body: cleanChirpBody(body.Body), UserID: userId})
 		if err != nil {
 			log.Printf("Error creating chirp: %v", err)
 			w.WriteHeader(500)
